@@ -351,62 +351,231 @@ export const syncSlackChannel = action({
 
 export const analyzeSentimentBatch = action({
   args: { messageIds: v.array(v.id('messages')) },
-  handler: async (ctx, args) => {
-    // This would integrate with Claude API for sentiment analysis
-    // For demo purposes, we'll assign placeholder sentiment scores with proper error handling
-    
-    const results = { processed: 0, failed: 0 }
-    
-    for (const messageId of args.messageIds) {
-      try {
-        // Demo placeholder: assign sentiment based on message content analysis
-        // In production, this would call an actual sentiment analysis API
-        const sentimentScore = Math.random() > 0.7 ? 0.8 : Math.random() > 0.3 ? 0.2 : -0.5
-        
-        await ctx.runMutation(api.messages.updateMessageSentiment, {
-          messageId,
-          sentimentScore
-        })
-        results.processed++
-      } catch (error) {
-        console.error(`Failed to analyze sentiment for message ${messageId}:`, error)
-        results.failed++
+  handler: async (ctx, args): Promise<{
+    success: boolean
+    processedCount: number
+    failedCount: number
+    failedMessageIds: string[]
+    totalTime?: number
+    validationErrors?: number
+    error?: string
+    timestamp: number
+  }> => {
+    // Early return for empty batches - no need to initialize API client
+    if (!args.messageIds || args.messageIds.length === 0) {
+      return {
+        success: true,
+        processedCount: 0,
+        failedCount: 0,
+        failedMessageIds: [],
+        error: 'No message IDs provided',
+        timestamp: Date.now()
       }
     }
 
-    console.log(`Sentiment analysis complete: ${results.processed} processed, ${results.failed} failed`)
+    // Check if API key is available before creating processor
+    if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_anthropic_api_key_here') {
+      return {
+        success: false,
+        processedCount: 0,
+        failedCount: args.messageIds.length,
+        failedMessageIds: args.messageIds,
+        error: 'ANTHROPIC_API_KEY not configured - please add your API key to .env.local',
+        timestamp: Date.now()
+      }
+    }
+
+    const { createSentimentProcessor } = await import('./lib/sentimentProcessor')
+    const { createSentimentValidator } = await import('./lib/sentimentValidator')
     
-    return { 
-      success: results.failed === 0, 
-      processedCount: results.processed,
-      failedCount: results.failed,
-      timestamp: Date.now()
+    const processor = createSentimentProcessor()
+    const validator = createSentimentValidator()
+    
+    const failedMessageIds: string[] = []
+    const validMessages = []
+
+    // Fetch messages with comprehensive error tracking
+    const fetchResults = await Promise.allSettled(
+      args.messageIds.map(async (messageId) => {
+        // For actions, we need to use runQuery instead of ctx.db
+        // We'll assume messageIds are actually message internal IDs
+        try {
+          // Since we can't directly get by ID in an action, we'll need to get all unprocessed and filter
+          // This is not ideal but works for the demo
+          const allMessages = await ctx.runQuery(api.messages.getUnprocessedMessages, { limit: 1000 })
+          const message = allMessages.find(m => m._id === messageId)
+          return { messageId, message }
+        } catch (error) {
+          return { messageId, message: null, error }
+        }
+      })
+    )
+
+    for (let i = 0; i < fetchResults.length; i++) {
+      const result = fetchResults[i]
+      const messageId = args.messageIds[i]
+      
+      if (result.status === 'rejected') {
+        console.error(`Failed to fetch message ${messageId}:`, result.reason)
+        failedMessageIds.push(messageId)
+      } else if (result.value.message && 
+                 !result.value.message.sentimentProcessed && 
+                 !result.value.message.isDeleted &&
+                 result.value.message.text?.trim().length > 0) {
+        validMessages.push(result.value.message)
+      } else {
+        failedMessageIds.push(messageId) // Skip already processed or invalid messages
+      }
+    }
+
+    if (validMessages.length === 0) {
+      return {
+        success: true,
+        processedCount: 0,
+        failedCount: args.messageIds.length,
+        failedMessageIds,
+        error: 'No valid messages to process',
+        timestamp: Date.now()
+      }
+    }
+
+    try {
+      // Process messages through Claude API
+      const { results, stats } = await processor.processBatch(validMessages)
+      
+      // Validate results with detailed tracking
+      const { sanitizedResults, stats: validationStats } = validator.validateBatch(results)
+
+      // Update messages with sentiment scores using batch approach
+      const updateResults = await Promise.allSettled(
+        sanitizedResults.map(result => 
+          ctx.runMutation(api.messages.updateMessageSentiment, {
+            messageId: result.messageId as any,
+            sentimentScore: result.sentimentScore
+          }).then(() => ({ messageId: result.messageId, success: true }))
+           .catch(error => ({ messageId: result.messageId, success: false, error }))
+        )
+      )
+
+      let processed = 0
+      let failed = 0
+      const updateFailures: string[] = []
+
+      updateResults.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.success) {
+          processed++
+        } else {
+          failed++
+          const messageId = sanitizedResults[index]?.messageId || 'unknown'
+          updateFailures.push(messageId)
+          if (result.status === 'rejected') {
+            console.error(`Failed to update message ${messageId}:`, result.reason)
+          }
+        }
+      })
+
+      console.log(`Sentiment analysis complete: ${processed} processed, ${failed} failed`)
+      console.log(`Processing stats:`, stats)
+      console.log(`Validation stats:`, validationStats)
+
+      if (updateFailures.length > 0) {
+        console.error(`Failed to update messages: ${updateFailures.join(', ')}`)
+      }
+
+      return {
+        success: failed === 0 && failedMessageIds.length === 0,
+        processedCount: processed,
+        failedCount: failed + failedMessageIds.length,
+        failedMessageIds: [...failedMessageIds, ...updateFailures],
+        totalTime: stats.totalTime,
+        validationErrors: validationStats.errors.length,
+        timestamp: Date.now()
+      }
+    } catch (error) {
+      console.error('Batch sentiment analysis failed:', error)
+      
+      // Fallback: mark all messages as processed with neutral sentiment
+      const fallbackResults: PromiseSettledResult<any>[] = await Promise.allSettled(
+        validMessages.map((msg: any) => 
+          ctx.runMutation(api.messages.updateMessageSentiment, {
+            messageId: msg._id,
+            sentimentScore: 0 // Neutral fallback
+          })
+        )
+      )
+
+      const fallbackProcessed: number = fallbackResults.filter((r: PromiseSettledResult<any>) => r.status === 'fulfilled').length
+
+      return {
+        success: false,
+        processedCount: fallbackProcessed,
+        failedCount: validMessages.length - fallbackProcessed + failedMessageIds.length,
+        failedMessageIds,
+        error: `API processing failed: ${String(error)}. Applied neutral fallback to ${fallbackProcessed} messages.`,
+        timestamp: Date.now()
+      }
     }
   }
 })
 
 export const processUnanalyzedMessages = action({
-  handler: async (ctx): Promise<{ success: boolean; processedCount: number; message?: string; timestamp: number }> => {
-    const unprocessedMessages = await ctx.runQuery(api.messages.getUnprocessedMessages, {
-      limit: 50
-    }) as Array<{ _id: string }>
-
-    if (unprocessedMessages.length === 0) {
-      return { success: true, processedCount: 0, message: 'No messages to process', timestamp: Date.now() }
+  handler: async (ctx): Promise<{ success: boolean; processedCount: number; failedCount?: number; error?: string; timestamp: number }> => {
+    // Check if API key is available before creating processor
+    if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_anthropic_api_key_here') {
+      return {
+        success: false,
+        processedCount: 0,
+        failedCount: 0,
+        error: 'ANTHROPIC_API_KEY not configured - please add your API key to .env.local',
+        timestamp: Date.now()
+      }
     }
 
-    const messageIds = unprocessedMessages.map(msg => msg._id) as Array<string>
+    const { createSentimentProcessor } = await import('./lib/sentimentProcessor')
     
-    await ctx.runAction(api.slack.analyzeSentimentBatch, {
-      messageIds: messageIds as any // Casting for demo purposes - would be properly typed in production
-    })
+    try {
+      const processor = createSentimentProcessor()
 
-    console.log(`Processed ${messageIds.length} unanalyzed messages`)
-    
-    return { 
-      success: true, 
-      processedCount: messageIds.length,
-      timestamp: Date.now()
+      // Use the processor's built-in method for handling unanalyzed messages
+      const stats = await processor.processUnanalyzedMessages(
+        // Get unprocessed messages
+        async () => {
+          const messages = await ctx.runQuery(api.messages.getUnprocessedMessages, {
+            limit: 100 // Process larger batches for efficiency
+          })
+          return messages
+        },
+        // Update sentiment function
+        async (messageId: string, score: number) => {
+          await ctx.runMutation(api.messages.updateMessageSentiment, {
+            messageId: messageId as any, // Cast for Convex ID type
+            sentimentScore: score
+          })
+        }
+      )
+
+      console.log(`Background processing complete:`, stats)
+
+      if (stats.errors.length > 0) {
+        console.error('Processing errors:', stats.errors)
+      }
+
+      return {
+        success: stats.failed === 0,
+        processedCount: stats.processed,
+        failedCount: stats.failed,
+        error: stats.errors.length > 0 ? `${stats.errors.length} errors encountered` : undefined,
+        timestamp: Date.now()
+      }
+    } catch (error) {
+      console.error('Background message processing failed:', error)
+      return {
+        success: false,
+        processedCount: 0,
+        failedCount: 0,
+        error: String(error),
+        timestamp: Date.now()
+      }
     }
   }
 })
