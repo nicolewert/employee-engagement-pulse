@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { TaskList } from "@/components/TaskList"
 
 export default function Home() {
   return (
@@ -73,8 +72,12 @@ export default function Home() {
         </div>
 
         <div className="mb-16">
-          <h2 className="text-2xl font-semibold text-center mb-8">Try the Convex Integration</h2>
-          <TaskList />
+          <h2 className="text-2xl font-semibold text-center mb-8">Employee Engagement Pulse</h2>
+          <div className="text-center">
+            <p className="text-muted-foreground">
+              Monitor team sentiment and engagement through Slack channel analysis
+            </p>
+          </div>
         </div>
 
         <div className="text-center space-y-4">
