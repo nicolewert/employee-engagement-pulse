@@ -17,18 +17,28 @@ export interface BatchSentimentRequest {
 }
 
 export class ClaudeAPIClient {
-  private client: Anthropic
+  public client: Anthropic
   private maxRetries: number = 3
   private baseDelay: number = 1000 // 1 second
+  private isHealthy: boolean = true
+  private lastHealthCheck: number = 0
+  private healthCheckInterval: number = 60000 // 1 minute
 
   constructor(apiKey?: string) {
     if (!apiKey && !process.env.ANTHROPIC_API_KEY) {
       throw new Error('ANTHROPIC_API_KEY environment variable is required')
     }
 
-    this.client = new Anthropic({
-      apiKey: apiKey || process.env.ANTHROPIC_API_KEY
-    })
+    try {
+      this.client = new Anthropic({
+        apiKey: apiKey || process.env.ANTHROPIC_API_KEY,
+        timeout: 30000, // 30 second timeout
+      })
+    } catch (error) {
+      console.error('Failed to initialize Claude client:', error)
+      this.isHealthy = false
+      throw error
+    }
   }
 
   async analyzeSentimentBatch(request: BatchSentimentRequest): Promise<SentimentAnalysisResult[]> {
@@ -73,31 +83,68 @@ export class ClaudeAPIClient {
   }
 
   private async processSingleBatch(messages: BatchSentimentRequest['messages']): Promise<SentimentAnalysisResult[]> {
+    // Check health before processing
+    if (!await this.checkHealth()) {
+      console.warn('Claude API is unhealthy, using fallback sentiment analysis')
+      return messages.map(msg => ({
+        messageId: msg.id,
+        sentimentScore: 0,
+        confidence: 0.1,
+        reasoning: 'Claude API unavailable - using neutral sentiment'
+      }))
+    }
+
     const prompt = this.buildSentimentPrompt(messages)
-    
     let lastError: Error | null = null
     
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        const response = await this.client.messages.create({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 4000,
-          messages: [{
-            role: 'user',
-            content: prompt
-          }],
-          temperature: 0.1
-        })
+        // Add timeout wrapper
+        const response = await Promise.race([
+          this.client.messages.create({
+            model: 'claude-3-haiku-20240307',
+            max_tokens: 4000,
+            messages: [{
+              role: 'user',
+              content: prompt
+            }],
+            temperature: 0.1
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request timeout')), 25000) // 25 second timeout
+          )
+        ]) as any
 
-        const content = response.content[0]
-        if (content.type !== 'text') {
-          throw new Error('Unexpected response type from Claude API')
+        // Validate response structure
+        if (!response || !response.content || !Array.isArray(response.content)) {
+          throw new Error('Invalid response structure from Claude API')
         }
 
-        return this.parseSentimentResponse(content.text, messages)
+        const content = response.content[0]
+        if (!content || content.type !== 'text' || !content.text) {
+          throw new Error('Unexpected or empty response type from Claude API')
+        }
+
+        const results = this.parseSentimentResponse(content.text, messages)
+        
+        // Mark as healthy on success
+        this.isHealthy = true
+        this.lastHealthCheck = Date.now()
+        
+        return results
       } catch (error) {
         lastError = error as Error
         console.error(`Claude API attempt ${attempt} failed:`, error)
+        
+        // Mark as unhealthy on certain errors
+        if (error instanceof Error && (
+          error.message.includes('timeout') ||
+          error.message.includes('rate limit') ||
+          error.message.includes('authentication')
+        )) {
+          this.isHealthy = false
+          this.lastHealthCheck = Date.now()
+        }
 
         if (attempt < this.maxRetries) {
           const delay = this.baseDelay * Math.pow(2, attempt - 1) // Exponential backoff
@@ -106,6 +153,10 @@ export class ClaudeAPIClient {
       }
     }
 
+    // Mark as unhealthy after all retries failed
+    this.isHealthy = false
+    this.lastHealthCheck = Date.now()
+    
     throw new Error(`Claude API failed after ${this.maxRetries} attempts: ${lastError?.message}`)
   }
 
@@ -197,15 +248,43 @@ Rules:
 
   async testConnection(): Promise<boolean> {
     try {
+      const startTime = Date.now()
       await this.client.messages.create({
         model: 'claude-3-haiku-20240307',
         max_tokens: 10,
         messages: [{ role: 'user', content: 'Hello' }]
       })
+      const responseTime = Date.now() - startTime
+      
+      this.isHealthy = true
+      this.lastHealthCheck = Date.now()
+      
+      console.log(`Claude API health check passed in ${responseTime}ms`)
       return true
     } catch (error) {
       console.error('Claude API connection test failed:', error)
+      this.isHealthy = false
+      this.lastHealthCheck = Date.now()
       return false
+    }
+  }
+
+  async checkHealth(): Promise<boolean> {
+    const now = Date.now()
+    
+    // Use cached health status if recent
+    if (now - this.lastHealthCheck < this.healthCheckInterval) {
+      return this.isHealthy
+    }
+    
+    // Perform health check
+    return await this.testConnection()
+  }
+
+  getHealthStatus(): { isHealthy: boolean; lastCheck: number } {
+    return {
+      isHealthy: this.isHealthy,
+      lastCheck: this.lastHealthCheck
     }
   }
 }

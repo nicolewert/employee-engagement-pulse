@@ -25,7 +25,20 @@ crons.weekly(
     hourUTC: 9,
     minuteUTC: 0
   },
-  api.insights.generateWeeklyInsights
+  api.insights.generateWeeklyInsights,
+  {
+    weekStart: (() => {
+      // Calculate the start of the previous week (Monday)
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 0, Monday = 1
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - daysToMonday - 7); // Previous week's Monday
+      lastMonday.setHours(0, 0, 0, 0);
+      return lastMonday.getTime();
+    })(),
+    triggerType: "system" as const
+  }
 );
 
 // Clean up old sync progress records every 24 hours
