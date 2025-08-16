@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, AlertTriangle, Info } from 'lucide-react';
+import { Check, Info } from 'lucide-react';
 import { ActionableRecommendationsProps } from './types';
 
 export const ActionableRecommendations: React.FC<ActionableRecommendationsProps> = ({ 

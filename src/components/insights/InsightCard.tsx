@@ -15,9 +15,9 @@ const isValidMetrics = (metrics: unknown): metrics is { avgSentiment: number; me
          'avgSentiment' in metrics &&
          'messageCount' in metrics &&
          'activeUsers' in metrics &&
-         typeof (metrics as any).avgSentiment === 'number' &&
-         typeof (metrics as any).messageCount === 'number' &&
-         typeof (metrics as any).activeUsers === 'number';
+         typeof (metrics as Record<string, unknown>).avgSentiment === 'number' &&
+         typeof (metrics as Record<string, unknown>).messageCount === 'number' &&
+         typeof (metrics as Record<string, unknown>).activeUsers === 'number';
 };
 
 const isValidTrendAnalysis = (trends: unknown): trends is { sentimentChange: number; activityChange: number; engagementChange: number } => {
@@ -27,9 +27,9 @@ const isValidTrendAnalysis = (trends: unknown): trends is { sentimentChange: num
          'sentimentChange' in trends &&
          'activityChange' in trends &&
          'engagementChange' in trends &&
-         typeof (trends as any).sentimentChange === 'number' &&
-         typeof (trends as any).activityChange === 'number' &&
-         typeof (trends as any).engagementChange === 'number';
+         typeof (trends as Record<string, unknown>).sentimentChange === 'number' &&
+         typeof (trends as Record<string, unknown>).activityChange === 'number' &&
+         typeof (trends as Record<string, unknown>).engagementChange === 'number';
 };
 
 const getRiskColor = (risk: 'low' | 'medium' | 'high' | undefined | null) => {
