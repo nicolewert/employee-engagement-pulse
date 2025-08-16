@@ -110,46 +110,149 @@ Employee Engagement Pulse is a real-time sentiment analysis dashboard that monit
 export const getChannels = query({
   handler: async (ctx) => {
     // Returns all monitored channels with status
+    // Includes channel health, sync status, and current sentiment
   }
 });
 
 export const getChannelMessages = query({
-  args: { channelId: v.id("channels"), limit: v.optional(v.number()) },
+  args: { 
+    channelId: v.id("channels"), 
+    limit: v.optional(v.number()),
+    filter: v.optional(v.object({
+      startDate: v.optional(v.number()),
+      endDate: v.optional(v.number()),
+      sentimentRange: v.optional(v.object({
+        min: v.number(),
+        max: v.number()
+      }))
+    }))
+  },
   handler: async (ctx, args) => {
-    // Returns paginated messages for a channel
+    // Returns paginated messages for a channel with advanced filtering
+    // Supports date range and sentiment score filtering
   }
 });
 
 // Dashboard Data
 export const getWeeklyDashboard = query({
-  args: { weekStart: v.number(), channelIds: v.optional(v.array(v.string())) },
+  args: { 
+    weekStart: v.number(), 
+    channelIds: v.optional(v.array(v.string())),
+    includeDetails: v.optional(v.boolean())
+  },
   handler: async (ctx, args) => {
-    // Returns aggregated weekly metrics for dashboard
+    // Returns comprehensive weekly metrics for dashboard
+    // Optional detailed insights for each channel
+    // Includes burnout risk assessment and trend analysis
   }
 });
 
 export const getWeeklyInsights = query({
-  args: { weekStart: v.number(), channelId: v.optional(v.string()) },
+  args: { 
+    weekStart: v.number(), 
+    channelId: v.optional(v.string()),
+    riskThreshold: v.optional(v.string()) // 'low' | 'medium' | 'high'
+  },
   handler: async (ctx, args) => {
     // Returns AI-generated insights for the week
+    // Can filter by channel and burnout risk level
+    // Provides actionable team improvement recommendations
   }
 });
 
 export const getSentimentTrends = query({
-  args: { channelId: v.string(), days: v.number() },
+  args: { 
+    channelId: v.string(), 
+    days: v.number(),
+    aggregation: v.optional(v.string()) // 'daily' | 'hourly' | 'weekly'
+  },
   handler: async (ctx, args) => {
-    // Returns daily sentiment averages for trending
+    // Returns sentiment averages with flexible aggregation
+    // Supports different time granularities
+    // Includes additional metrics like message volume and engagement
+  }
+});
+
+export const getBurnoutAlerts = query({
+  args: {
+    channelId: v.optional(v.string()),
+    riskLevel: v.optional(v.string()), // 'medium' | 'high'
+    timeframe: v.optional(v.number()) // Days to look back
+  },
+  handler: async (ctx, args) => {
+    // Generates targeted burnout risk alerts
+    // Can filter by channel and risk severity
+    // Provides context and recommended interventions
   }
 });
 
 // User Analytics
 export const getUserSentimentProfile = query({
-  args: { userId: v.string(), days: v.optional(v.number()) },
+  args: { 
+    userId: v.string(), 
+    days: v.optional(v.number()),
+    includeTeamContext: v.optional(v.boolean())
+  },
   handler: async (ctx, args) => {
-    // Returns user's sentiment history and patterns
+    // Returns comprehensive user sentiment history
+    // Optional team comparison and contextual insights
+    // Helps identify individual communication patterns
+  }
+});
+
+// Comparative Analytics
+export const getTeamComparisonMetrics = query({
+  args: {
+    teamIds: v.optional(v.array(v.string())),
+    metric: v.string(), // 'sentiment' | 'engagement' | 'burnoutRisk'
+    timeframe: v.optional(v.number())
+  },
+  handler: async (ctx, args) => {
+    // Generates comparative team performance metrics
+    // Supports cross-team and cross-channel analysis
+    // Helps identify high-performing and at-risk teams
   }
 });
 ```
+
+### Query Documentation
+
+#### Dashboard Queries Overview
+
+1. **getWeeklyDashboard**
+   - Purpose: Retrieve comprehensive weekly team sentiment metrics
+   - Key Features:
+     * Aggregates data across multiple channels
+     * Optional detailed channel-level insights
+     * Burnout risk assessment included
+
+2. **getWeeklyInsights**
+   - Purpose: Generate AI-powered team communication insights
+   - Key Features:
+     * Contextual analysis of team dynamics
+     * Actionable improvement recommendations
+     * Filterable by channel and risk level
+
+3. **getSentimentTrends**
+   - Purpose: Track sentiment evolution over time
+   - Key Features:
+     * Flexible time granularity
+     * Multi-dimensional trend analysis
+     * Message volume and engagement metrics
+
+4. **getBurnoutAlerts**
+   - Purpose: Proactively identify team burnout risks
+   - Key Features:
+     * Targeted risk level filtering
+     * Contextual intervention recommendations
+     * Early warning system for team health
+
+#### Best Practices
+
+- Always use optional parameters for maximum query flexibility
+- Leverage Convex's real-time subscriptions for live updates
+- Implement client-side caching for performance optimization
+- Use error boundaries and loading states in UI components
 
 ### Convex Mutations
 
@@ -331,24 +434,123 @@ interface DateRangePickerProps {
   onDateChange: (start: Date, end: Date) => void;
   presets?: Array<{ label: string; days: number }>;
 }
+
+// Dashboard-Specific Components
+// components/dashboard/MetricsSummary.tsx
+interface MetricsSummaryProps {
+  weeklyMetrics: {
+    avgSentiment: number;
+    messageCount: number;
+    activeUsers: number;
+    burnoutRisk: "low" | "medium" | "high";
+  };
+  channelName?: string;
+  trendAnalysis: {
+    sentimentChange: number;
+    activityChange: number;
+    engagementChange: number;
+  };
+}
+
+// components/dashboard/ChannelSelector.tsx
+interface ChannelSelectorProps {
+  availableChannels: Array<{ id: string; name: string }>;
+  selectedChannels: string[];
+  onChannelToggle: (channelId: string) => void;
+}
+
+// components/dashboard/WeekNavigator.tsx
+interface WeekNavigatorProps {
+  currentWeek: Date;
+  onWeekChange: (newWeek: Date) => void;
+  allowFutureWeeks?: boolean;
+}
 ```
 
 ### Feature Components
 
 ```typescript
-// components/dashboard/WeeklyOverview.tsx
-// components/dashboard/SentimentTrendChart.tsx
-// components/dashboard/ChannelComparison.tsx
-// components/dashboard/UserEngagementTable.tsx
+// Dashboard Components
+// components/dashboard/DashboardLayout.tsx - Main dashboard layout with sidebar and navigation
+// components/dashboard/WeeklyOverview.tsx - Comprehensive weekly sentiment and engagement overview
+// components/dashboard/SentimentTrendChart.tsx - Advanced sentiment trend visualization
+// components/dashboard/ChannelComparison.tsx - Multi-channel sentiment comparison
+// components/dashboard/UserEngagementTable.tsx - Detailed user participation metrics
 
-// components/channels/ChannelManager.tsx
-// components/channels/AddChannelDialog.tsx
-// components/channels/ChannelSyncStatus.tsx
+// Channel Management Components
+// components/channels/ChannelManager.tsx - Comprehensive channel management interface
+// components/channels/AddChannelDialog.tsx - Dialog for adding new Slack channels
+// components/channels/ChannelSyncStatus.tsx - Real-time channel synchronization status
 
-// components/insights/InsightsList.tsx
-// components/insights/InsightGenerator.tsx
-// components/insights/ActionableRecommendations.tsx
+// Insights Components
+// components/insights/InsightsList.tsx - Curated list of AI-generated insights
+// components/insights/InsightGenerator.tsx - Background process for generating weekly insights
+// components/insights/ActionableRecommendations.tsx - Specific, actionable team improvement suggestions
+
+// Error Handling Components
+// components/dashboard/ErrorBoundary.tsx - Graceful error handling for dashboard components
+// components/dashboard/LoadingSkeletons.tsx - Skeleton loaders for data fetching states
 ```
+
+### Dashboard Implementation Details
+
+#### Dashboard Core Features
+
+1. **Real-time Sentiment Tracking**
+   - Sub-second message sentiment processing
+   - Live dashboard updates via Convex subscriptions
+   - Multi-dimensional sentiment scoring
+
+2. **Advanced Visualization**
+   - Interactive sentiment trend charts
+   - Channel comparison views
+   - Burnout risk indicators
+   - Customizable date and channel filtering
+
+3. **AI-Powered Insights**
+   - Weekly automated insights generation
+   - Contextual communication pattern analysis
+   - Proactive team health recommendations
+
+#### Dashboard State Management
+
+```typescript
+// Centralized dashboard state management
+interface DashboardState {
+  selectedWeek: Date;
+  selectedChannels: string[];
+  viewMode: 'overview' | 'trends' | 'team';
+  metrics: {
+    avgSentiment: number;
+    messageCount: number;
+    burnoutRiskLevel: 'low' | 'medium' | 'high';
+  };
+  insights: WeeklyInsight[];
+}
+
+// URL-synchronized state handling
+const [dashboardState, setDashboardState] = useQueryState<DashboardState>({
+  initialState: {
+    selectedWeek: new Date(),
+    selectedChannels: [],
+    viewMode: 'overview',
+    metrics: { 
+      avgSentiment: 0,
+      messageCount: 0,
+      burnoutRiskLevel: 'low'
+    },
+    insights: []
+  }
+});
+```
+
+#### Performance Optimization Strategies
+
+- Memoized React components
+- Efficient Convex query batching
+- Lazy loading of detailed insights
+- Optimistic UI updates
+- Minimal re-render techniques
 
 ## Routing Structure
 

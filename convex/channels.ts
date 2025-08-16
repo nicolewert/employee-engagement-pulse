@@ -108,3 +108,35 @@ export const updateChannelSync = mutation({
     })
   }
 })
+
+export const getChannelsWithStatus = query({
+  handler: async (ctx) => {
+    const channels = await ctx.db
+      .query('channels')
+      .withIndex('by_created_at')
+      .order('desc')
+      .collect()
+
+    const channelsWithStatus = await Promise.all(
+      channels.map(async (channel) => {
+        const recentMessages = await ctx.db
+          .query('messages')
+          .withIndex('by_channel_timestamp', q => 
+            q.eq('slackChannelId', channel.slackChannelId)
+          )
+          .order('desc')
+          .take(1)
+
+        const lastActivity = recentMessages[0]?.timestamp || channel.createdAt
+
+        return {
+          ...channel,
+          lastActivity,
+          status: channel.isActive ? 'active' : 'inactive'
+        }
+      })
+    )
+
+    return channelsWithStatus
+  }
+})

@@ -14,6 +14,7 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as channels from "../channels.js";
+import type * as dashboard from "../dashboard.js";
 import type * as lib_claudeAPIClient from "../lib/claudeAPIClient.js";
 import type * as lib_sentimentProcessor from "../lib/sentimentProcessor.js";
 import type * as lib_sentimentValidator from "../lib/sentimentValidator.js";
@@ -31,6 +32,7 @@ import type * as users from "../users.js";
  */
 declare const fullApi: ApiFromModules<{
   channels: typeof channels;
+  dashboard: typeof dashboard;
   "lib/claudeAPIClient": typeof lib_claudeAPIClient;
   "lib/sentimentProcessor": typeof lib_sentimentProcessor;
   "lib/sentimentValidator": typeof lib_sentimentValidator;
