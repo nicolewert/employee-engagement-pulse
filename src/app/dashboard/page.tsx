@@ -115,7 +115,7 @@ function DashboardContent() {
         </div>
         <div className="flex flex-col space-y-2 sm:flex-row sm:space-x-2 sm:space-y-0">
           <ChannelSelector
-            channels={channels.map(c => ({
+            channels={channels.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
               id: c.slackChannelId,
               name: c.channelName,
               status: c.isActive ? 'active' : 'inactive' as const

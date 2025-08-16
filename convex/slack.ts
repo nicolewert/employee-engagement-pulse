@@ -322,8 +322,7 @@ export const syncSlackChannel = action({
     hours: v.optional(v.number()) 
   },
   handler: async (ctx, args) => {
-    // This would integrate with Slack Web API to fetch historical messages
-    // For now, it's a placeholder that updates the channel sync timestamp
+    const { syncSlackChannelWithProgress } = await import('./lib/slackAPI')
     
     const channel = await ctx.runQuery(api.channels.getChannelBySlackId, {
       slackChannelId: args.channelId
@@ -333,19 +332,37 @@ export const syncSlackChannel = action({
       throw new Error('Channel not found')
     }
 
+    // Sync with enhanced progress tracking
+    const result = await syncSlackChannelWithProgress(
+      ctx,
+      args.channelId,
+      args.hours || 24
+    )
+
+    // Update channel sync timestamp
     await ctx.runMutation(api.channels.updateChannelSync, {
       channelId: channel._id,
       lastSyncAt: Date.now()
     })
 
-    console.log(`Synced channel ${args.channelId} for ${args.hours || 24} hours`)
+    console.log(`Synced channel ${args.channelId}: ${result.messageCount} messages`)
     
     return { 
-      success: true, 
+      success: result.success, 
       channelId: args.channelId,
       syncedHours: args.hours || 24,
+      messageCount: result.messageCount,
+      error: result.error,
       timestamp: Date.now()
     }
+  }
+})
+
+export const validateSlackChannel = action({
+  args: { channelId: v.string() },
+  handler: async (ctx, args) => {
+    const { validateSlackChannel: validate } = await import('./lib/slackAPI')
+    return await validate(ctx, args.channelId)
   }
 })
 
