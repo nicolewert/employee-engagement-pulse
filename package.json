@@ -17,6 +17,7 @@
     "dev-full-with-playwright": "concurrently \"pnpm dev\" \"npx convex dev\"",
     "dev-bg": "concurrently --raw \"pnpm dev\" \"npx convex dev\"",
     "test-integration": "node tests/integration/taskList.test.js",
+    "test-ai-slack": "node tests/integration/ai-slack-integration.test.js",
     "ci-check": "node tests/runner.js",
     "setup-demo": "node setup-demo.js",
     "test-sentiment": "node test-sentiment-integration.js",
